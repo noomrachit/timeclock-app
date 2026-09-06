@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180"><rect width="180" height="180" rx="40" fill="#111111"/><circle cx="90" cy="90" r="46" fill="none" stroke="#3dd68c" stroke-width="8"/><line x1="90" y1="90" x2="90" y2="58" stroke="#3dd68c" stroke-width="8" stroke-linecap="round"/><line x1="90" y1="90" x2="118" y2="90" stroke="#3dd68c" stroke-width="8" stroke-linecap="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0F0F11"/>
+  <circle cx="256" cy="256" r="168" fill="none" stroke="#3D6B5A" stroke-width="18"/>
+  <circle cx="256" cy="256" r="16" fill="#EDEDED"/>
+  <line x1="256" y1="256" x2="256" y2="150" stroke="#EDEDED" stroke-width="18" stroke-linecap="round"/>
+  <line x1="256" y1="256" x2="340" y2="256" stroke="#7CB89A" stroke-width="12" stroke-linecap="round"/>
+</svg>

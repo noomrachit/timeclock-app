@@ -1,9 +1,13 @@
 {
   "name": "ลงเวลาทำงาน",
   "short_name": "ลงเวลา",
-  "start_url": "./",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#0d0d0d",
-  "theme_color": "#0d0d0d",
-  "icons": [{ "src": "icon.svg", "sizes": "512x512", "type": "image/svg+xml" }]
+  "orientation": "portrait",
+  "background_color": "#0F0F11",
+  "theme_color": "#0F0F11",
+  "icons": [
+    { "src": "icon.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
 }
