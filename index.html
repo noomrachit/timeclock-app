@@ -2,20 +2,108 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ลงเวลา">
-<meta name="application-name" content="ลงเวลา">
-<meta name="theme-color" content="#0F0F11">
-<title>ลงเวลา</title>
+<meta name="theme-color" content="#0b1220">
+<title>ตอกบัตรออนไลน์</title>
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.svg">
-<link rel="icon" href="icon.svg">
+<style>
+:root{--bg:#0b1220;--card:#162033;--line:#2a3d57;--ok:#3dd68c;--out:#5b9cff;--no:#ff6b6b;--off:#8b9bb4;--tx:#e8eef6}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:480px;margin-inline:auto}
+h1{font-size:18px;margin:0 0 4px}.sub{color:var(--off);font-size:13px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.clock{font-size:36px;font-weight:700;letter-spacing:1px}
+button{border:0;border-radius:10px;padding:12px;font-weight:700;cursor:pointer;width:100%;margin-top:8px;font-size:16px}
+.in{background:var(--ok);color:#062}.out{background:var(--out);color:#041428}
+.miss{background:var(--no);color:#fff}.off{background:#334;color:var(--off)}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.row:last-child{border-bottom:0}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px}
+.ok{background:#143;color:var(--ok)}.no{background:#411;color:var(--no)}.sat{background:#223;color:var(--off)}
+input{background:#0b1220;border:1px solid var(--line);color:var(--tx);border-radius:8px;padding:8px;width:140px}
+.pay{font-size:26px;font-weight:700;color:var(--ok)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:13px;color:var(--off)}
+</style>
 </head>
 <body>
-<p>see artifacts local full file — uploading via raw next if truncated</p>
-<script src="app.js"></script>
+<h1>ระบบตอกบัตรออนไลน์</h1>
+<div class="sub">กะ: อา–พฤ 06:00–16:00 · ศ 06:00–11:00 · ส หยุด · โซนเวลาเครื่อง</div>
+<div class="card">
+  <div class="sub" id="todayLabel"></div>
+  <div class="clock" id="now">--:--:--</div>
+  <div id="today">ยังไม่ตอก</div>
+  <button class="in" id="btnIn" onclick="punch('in')">ตอกเข้า</button>
+  <button class="out" id="btnOut" onclick="punch('out')">ตอกออก</button>
+  <button class="miss" onclick="mark('absent')">ขาด</button>
+  <button class="off" onclick="mark('off')">หยุด</button>
+</div>
+<div class="card">
+  <div class="sub">อัตราต่อวันเต็ม (บาท)</div>
+  <input id="rate" type="number" min="0" step="1" placeholder="เช่น 600" onchange="setRate(this.value)">
+  <div class="pay" id="pay">฿0</div>
+  <div class="grid" id="sum"></div>
+</div>
+<div class="card" id="list"></div>
+<script>
+const START=new Date(2026,7,21), END=new Date(2026,8,20);
+const KEY='timeclock-v2', RATEKEY='timeclock-rate';
+const TH=['อา','จ','อ','พ','พฤ','ศ','ส'];
+function rule(d){
+  const w=d.getDay();
+  if(w===6) return {in:null,out:null,days:0};
+  if(w===5) return {in:'06:00',out:'11:00',days:0.5};
+  return {in:'06:00',out:'16:00',days:1};
+}
+function load(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){return {}}}
+function save(d){localStorage.setItem(KEY,JSON.stringify(d))}
+function rate(){return Number(localStorage.getItem(RATEKEY)||0)}
+function setRate(v){localStorage.setItem(RATEKEY,String(v||0)); render()}
+function iso(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function today(){const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate())}
+function hhmm(d){return d.toTimeString().slice(0,8)}
+function punch(kind){
+  const t=today(), id=iso(t), data=load(), rec=data[id]||{status:'work'};
+  rec.status='work';
+  rec[kind]=hhmm(new Date());
+  data[id]=rec; save(data); render();
+}
+function mark(st){
+  const t=today(), id=iso(t), data=load();
+  data[id]={status:st}; save(data); render();
+}
+function payOf(rec, rr){ return (rec&&rec.status==='work') ? rr.days : 0 }
+function tick(){ document.getElementById('now').textContent=hhmm(new Date()); }
+function render(){
+  tick();
+  const t=today(), r=rule(t), data=load(), id=iso(t), rt=rate();
+  document.getElementById('rate').value=rt||'';
+  document.getElementById('todayLabel').textContent=`${TH[t.getDay()]} ${t.getDate()}/${t.getMonth()+1}/${t.getFullYear()}`;
+  const cur=data[id];
+  let txt=`กะเข้า ${r.in||'-'}  กะออก ${r.out||'-'}`;
+  if(cur){
+    if(cur.status==='work') txt=`เข้าจริง ${cur.in||'-'} · ออกจริง ${cur.out||'-'}`;
+    else txt=cur.status==='absent'?'ขาด':'หยุด';
+  }
+  document.getElementById('today').textContent=txt;
+  document.getElementById('btnIn').disabled=!!(cur&&cur.in);
+  document.getElementById('btnOut').disabled=!(cur&&cur.in)||!!(cur&&cur.out);
+  let html='', days=0, work=0, absent=0;
+  for(let d=new Date(START); d<=END; d.setDate(d.getDate()+1)){
+    const x=new Date(d), k=iso(x), rr=rule(x), rec=data[k];
+    const st=rec?rec.status:(x.getDay()===6?'off':'');
+    const pd=payOf(rec,rr); days+=pd;
+    if(st==='work') work++; if(st==='absent') absent++;
+    const cls=st==='work'?'ok':st==='absent'?'no':'sat';
+    const lab=st==='work'?'ทำ':st==='absent'?'ขาด':x.getDay()===6?'หยุด':'-';
+    const times=st==='work'?`${rec.in||'-'} → ${rec.out||'-'}`:(rr.out||'-');
+    html+=`<div class="row"><span>${TH[x.getDay()]} ${x.getDate()}/${x.getMonth()+1}</span><span>${times}</span><span class="badge ${cls}">${lab}</span></div>`;
+  }
+  document.getElementById('list').innerHTML=html;
+  document.getElementById('pay').textContent='฿'+(days*rt).toLocaleString();
+  document.getElementById('sum').innerHTML=`<div>วันคิดเงิน ${days}</div><div>ทำ ${work} วัน</div><div>ขาด ${absent} วัน</div><div>฿${rt.toLocaleString()}/วันเต็ม</div>`;
+}
+setInterval(tick,1000);
+render();
+</script>
 </body>
 </html>
