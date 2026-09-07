@@ -4,9 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ลงเวลา">
 <meta name="theme-color" content="#0b1220">
 <title>ตอกบัตรออนไลน์</title>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
 <style>
 :root{--bg:#0b1220;--card:#162033;--line:#2a3d57;--ok:#3dd68c;--out:#5b9cff;--no:#ff6b6b;--off:#8b9bb4;--tx:#e8eef6}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:480px;margin-inline:auto}
@@ -104,6 +108,7 @@ function render(){
 }
 setInterval(tick,1000);
 render();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 </script>
 </body>
 </html>
