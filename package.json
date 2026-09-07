@@ -1,0 +1,7 @@
+{
+  "name": "timeclock-app",
+  "private": true,
+  "scripts": {
+    "build": "echo ok"
+  }
+}
