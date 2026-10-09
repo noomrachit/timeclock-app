@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ลงเวลา">
+<meta name="theme-color" content="#0b1220">
+<title>ลงเวลาพนักงาน</title>
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<link rel="icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <section id="loginView" class="hidden">
+    <h1>ลงเวลาพนักงาน</h1>
+    <div class="sub">เข้าสู่ระบบด้วยรหัสพนักงานและ PIN ที่ได้รับจากแอดมิน</div>
+    <form class="card" id="loginForm">
+      <label for="code">รหัสพนักงาน</label>
+      <input id="code" autocomplete="username" autocapitalize="characters" required>
+      <label for="pin">PIN</label>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" required>
+      <button class="block in" type="submit">เข้าสู่ระบบ</button>
+      <div class="msg err" id="loginMsg"></div>
+    </form>
+  </section>
+
+  <section id="mainView" class="hidden">
+    <div class="top">
+      <div><h1 id="who"></h1><div class="sub" id="todayLabel"></div></div>
+      <button class="small" id="logoutBtn">ออกจากระบบ</button>
+    </div>
+    <div class="card">
+      <div class="clock" id="now">--:--:--</div>
+      <div class="sub">เวลาตามเซิร์ฟเวอร์</div>
+      <div id="todayText"></div>
+      <button class="block in" id="btnIn">ตอกเข้า</button>
+      <button class="block out" id="btnOut">ตอกออก</button>
+      <div class="msg" id="punchMsg"></div>
+    </div>
+    <div class="card">
+      <div class="nav">
+        <button id="prevBtn" aria-label="รอบก่อน">‹</button>
+        <div class="lbl" id="periodLabel"></div>
+        <button id="nextBtn" aria-label="รอบถัดไป">›</button>
+      </div>
+      <div class="pay" id="pay"></div>
+      <div class="grid" id="sum"></div>
+    </div>
+    <div class="card" id="list"></div>
+  </section>
+
+</div>
+<script src="/static/common.js"></script>
+<script src="/static/emp.js"></script>
+</body>
+</html>

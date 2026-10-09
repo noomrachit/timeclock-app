@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b1220">
+<meta name="robots" content="noindex">
+<title>แอดมิน · ลงเวลาพนักงาน</title>
+<link rel="icon" href="/static/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wide">
+
+  <section id="loginView" class="hidden wrap">
+    <h1>แอดมิน · ลงเวลาพนักงาน</h1>
+    <form class="card" id="loginForm">
+      <label for="pw">รหัสผ่านแอดมิน</label>
+      <input id="pw" type="password" autocomplete="current-password" required>
+      <button class="block in" type="submit">เข้าสู่ระบบ</button>
+      <div class="msg err" id="loginMsg"></div>
+    </form>
+  </section>
+
+  <section id="mainView" class="hidden">
+    <div class="top">
+      <h1>แอดมิน · ลงเวลาพนักงาน</h1>
+      <button class="small" id="logoutBtn">ออกจากระบบ</button>
+    </div>
+    <div class="tabs">
+      <button data-tab="today" class="on">วันนี้</button>
+      <button data-tab="report">สรุปรอบ</button>
+      <button data-tab="emps">พนักงาน</button>
+    </div>
+
+    <div class="card" id="tab-today">
+      <h2 id="todayTitle"></h2>
+      <div class="stat" id="todayStat"></div>
+      <input id="todayFilter" placeholder="ค้นหาชื่อหรือรหัส">
+      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>เข้า</th><th>ออก</th><th>สถานะ</th></tr></thead><tbody id="todayBody"></tbody></table></div>
+    </div>
+
+    <div class="card hidden" id="tab-report">
+      <div class="nav">
+        <button id="prevBtn" aria-label="รอบก่อน">‹</button>
+        <div class="lbl" id="periodLabel"></div>
+        <button id="nextBtn" aria-label="รอบถัดไป">›</button>
+      </div>
+      <div class="flex">
+        <div><label for="rate">ค่าแรงต่อวันเต็ม (บาท) ใช้กับทุกคน</label><input id="rate" type="number" min="0" step="1"></div>
+        <div style="flex:0"><button id="rateBtn">บันทึกค่าแรง</button></div>
+        <div style="flex:0"><button id="csvBtn">ส่งออกไฟล์ตาราง</button></div>
+      </div>
+      <div class="msg" id="reportMsg"></div>
+      <div class="stat" id="reportStat"></div>
+      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>วันคิดเงิน</th><th>มา</th><th>ขาด</th><th>ลา</th><th>สาย</th><th>ลืมตอกออก</th><th>ยอดเงิน</th><th></th></tr></thead><tbody id="reportBody"></tbody></table></div>
+    </div>
+
+    <div class="card hidden" id="tab-emps">
+      <h2>เพิ่มพนักงาน</h2>
+      <form class="flex" id="addForm">
+        <div><label for="newCode">รหัสพนักงาน</label><input id="newCode" required maxlength="20" autocapitalize="characters" placeholder="เช่น E001"></div>
+        <div><label for="newName">ชื่อ</label><input id="newName" required maxlength="80"></div>
+        <div style="flex:0"><button type="submit" class="in">เพิ่ม</button></div>
+      </form>
+      <div class="msg" id="empMsg"></div>
+      <div id="pinShow" class="hidden"></div>
+      <h2 style="margin-top:16px">รายชื่อ (<span id="empCount">0</span>)</h2>
+      <input id="empFilter" placeholder="ค้นหาชื่อหรือรหัส">
+      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th></th></tr></thead><tbody id="empBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <dialog id="dayDlg">
+    <div class="top"><h2 id="dlgTitle"></h2><button class="small" id="dlgClose">ปิด</button></div>
+    <div class="sub">แก้ไขได้เมื่อพนักงานลืมตอก ทุกการแก้ไขจะมีป้าย "แก้โดยแอดมิน"</div>
+    <div id="dlgList"></div>
+    <div class="card" id="editBox" style="margin-top:10px">
+      <h2 id="editTitle"></h2>
+      <div class="flex">
+        <div><label for="edStatus">สถานะ</label>
+          <select id="edStatus"><option value="work">ทำงาน</option><option value="absent">ขาด</option><option value="leave">ลา</option><option value="clear">ล้าง (ไม่มีข้อมูล)</option></select></div>
+        <div><label for="edIn">เข้า</label><input id="edIn" type="time"></div>
+        <div><label for="edOut">ออก</label><input id="edOut" type="time"></div>
+      </div>
+      <label for="edNote">หมายเหตุ</label><input id="edNote" maxlength="200">
+      <button class="block in" id="edSave">บันทึก</button>
+      <div class="msg" id="edMsg"></div>
+    </div>
+  </dialog>
+
+</div>
+<script src="/static/common.js"></script>
+<script src="/static/admin.js"></script>
+</body>
+</html>
