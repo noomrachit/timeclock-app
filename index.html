@@ -9,8 +9,9 @@
 <meta name="theme-color" content="#0b1220">
 <title>ตอกบัตรออนไลน์</title>
 <link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon.svg">
-<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <style>
 :root{--bg:#0b1220;--card:#162033;--line:#2a3d57;--ok:#3dd68c;--out:#5b9cff;--no:#ff6b6b;--off:#8b9bb4;--tx:#e8eef6}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:480px;margin-inline:auto}
@@ -27,6 +28,9 @@ button{border:0;border-radius:10px;padding:12px;font-weight:700;cursor:pointer;w
 input{background:#0b1220;border:1px solid var(--line);color:var(--tx);border-radius:8px;padding:8px;width:140px}
 .pay{font-size:26px;font-weight:700;color:var(--ok)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;font-size:13px;color:var(--off)}
+.nav{display:flex;gap:8px;align-items:center}.nav button{width:auto;flex:0 0 44px;margin:0;background:#223;color:var(--tx)}
+.nav .lbl{flex:1;text-align:center;font-weight:700}
+.two{display:flex;gap:8px}.two button{background:#223;color:var(--tx)}
 </style>
 </head>
 <body>
@@ -47,9 +51,34 @@ input{background:#0b1220;border:1px solid var(--line);color:var(--tx);border-rad
   <div class="pay" id="pay">฿0</div>
   <div class="grid" id="sum"></div>
 </div>
-<div class="card" id="list"></div>
+<div class="card">
+  <div class="nav">
+    <button onclick="shift(-1)" aria-label="รอบก่อน">‹</button>
+    <div class="lbl" id="periodLabel"></div>
+    <button onclick="shift(1)" aria-label="รอบถัดไป">›</button>
+  </div>
+  <div id="list"></div>
+</div>
+<div class="card">
+  <div class="sub">สำรองข้อมูล (ข้อมูลเก็บในเครื่องนี้เท่านั้น ควรสำรองไว้เป็นระยะ)</div>
+  <div class="two">
+    <button onclick="exportData()">ส่งออก</button>
+    <button onclick="document.getElementById('imp').click()">นำเข้า</button>
+  </div>
+  <input id="imp" type="file" accept="application/json,.json" style="display:none" onchange="importData(this)">
+</div>
 <script>
-const START=new Date(2026,7,21), END=new Date(2026,8,20);
+// รอบเงินเดือน: วันที่ 21 ถึงวันที่ 20 ของเดือนถัดไป — คำนวณจากวันนี้ ไม่ล็อกตายตัว
+const CUTOFF=21;
+let offset=0; // 0 = รอบปัจจุบัน, -1 = รอบก่อน
+function period(off){
+  const t=today();
+  let y=t.getFullYear(), m=t.getMonth();
+  if(t.getDate()<CUTOFF) m-=1;
+  m+=off;
+  return {start:new Date(y,m,CUTOFF), end:new Date(y,m+1,CUTOFF-1)};
+}
+function shift(n){ if(offset+n>0) return; offset+=n; render(); }
 const KEY='timeclock-v2', RATEKEY='timeclock-rate';
 const TH=['อา','จ','อ','พ','พฤ','ศ','ส'];
 function rule(d){
@@ -72,8 +101,38 @@ function punch(kind){
   data[id]=rec; save(data); render();
 }
 function mark(st){
-  const t=today(), id=iso(t), data=load();
+  const t=today(), id=iso(t), data=load(), cur=data[id];
+  if(cur&&cur.status==='work'&&(cur.in||cur.out)){
+    if(!confirm(`วันนี้ตอกเวลาไว้แล้ว (${cur.in||'-'} → ${cur.out||'-'})\nเปลี่ยนเป็น "${st==='absent'?'ขาด':'หยุด'}" จะลบเวลาที่ตอกไว้ ยืนยันไหม?`)) return;
+  }
   data[id]={status:st}; save(data); render();
+}
+function exportData(){
+  const payload=JSON.stringify({app:'timeclock',version:2,exported:new Date().toISOString(),rate:rate(),data:load()},null,1);
+  const name=`ลงเวลา-${iso(today())}.json`;
+  const file=new File([payload],name,{type:'application/json'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:name}).catch(()=>{});
+    return;
+  }
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1000);
+}
+function importData(input){
+  const f=input.files&&input.files[0]; input.value='';
+  if(!f) return;
+  f.text().then(txt=>{
+    let obj; try{obj=JSON.parse(txt)}catch(e){alert('ไฟล์ไม่ถูกต้อง');return}
+    const inc=(obj&&obj.app==='timeclock'&&obj.data)?obj.data:obj;
+    if(!inc||typeof inc!=='object'||Array.isArray(inc)){alert('ไฟล์ไม่ถูกต้อง');return}
+    const keys=Object.keys(inc).filter(k=>/^\d{4}-\d{2}-\d{2}$/.test(k));
+    if(!keys.length){alert('ไม่พบข้อมูลลงเวลาในไฟล์');return}
+    if(!confirm(`นำเข้า ${keys.length} วัน — วันที่ซ้ำกับในเครื่องจะใช้ข้อมูลจากไฟล์ ยืนยันไหม?`)) return;
+    const data=load(); keys.forEach(k=>{data[k]=inc[k]}); save(data);
+    if(obj.rate&&!rate()) localStorage.setItem(RATEKEY,String(obj.rate));
+    render(); alert(`นำเข้าแล้ว ${keys.length} วัน`);
+  });
 }
 function payOf(rec, rr){ return (rec&&rec.status==='work') ? rr.days : 0 }
 function tick(){ document.getElementById('now').textContent=hhmm(new Date()); }
@@ -91,8 +150,10 @@ function render(){
   document.getElementById('today').textContent=txt;
   document.getElementById('btnIn').disabled=!!(cur&&cur.in);
   document.getElementById('btnOut').disabled=!(cur&&cur.in)||!!(cur&&cur.out);
+  const {start,end}=period(offset);
+  document.getElementById('periodLabel').textContent=`${start.getDate()}/${start.getMonth()+1} – ${end.getDate()}/${end.getMonth()+1}/${end.getFullYear()}`+(offset===0?' (รอบนี้)':'');
   let html='', days=0, work=0, absent=0;
-  for(let d=new Date(START); d<=END; d.setDate(d.getDate()+1)){
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
     const x=new Date(d), k=iso(x), rr=rule(x), rec=data[k];
     const st=rec?rec.status:(x.getDay()===6?'off':'');
     const pd=payOf(rec,rr); days+=pd;
