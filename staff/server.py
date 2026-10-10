@@ -1,8 +1,9 @@
 """
 ระบบลงเวลาพนักงาน (หลายคน) — aiohttp + PostgreSQL
 
-- พนักงานเข้าระบบด้วย รหัสพนักงาน + PIN แล้วตอกเข้า/ออกจากมือถือตัวเอง
-- เวลาที่บันทึกใช้นาฬิกาเซิร์ฟเวอร์ (โซน Asia/Jerusalem) ไม่ใช้เวลาจากมือถือ กันแก้นาฬิกาเครื่อง
+- พนักงานเข้าระบบด้วย รหัสพนักงาน + PIN แล้วลงวันนี้: ทำงาน (ตามกะ 1 คลิก) / ลา / ขาด / อื่นๆ (ใส่เวลาเอง)
+- พนักงานแก้ได้เฉพาะวันนี้ และแก้ไม่ได้ถ้าแอดมินแก้วันนั้นแล้ว · วันเสาร์ลงไม่ได้
+- ค่าแรงรายชั่วโมง: อา–พฤ 100%×8, ศ 100%×3 แล้ว 125%×2, 150%×1, 175%×1, 200% ที่เหลือ (ปัดลงทีละ 30 นาที)
 - แอดมิน (รหัสผ่านจาก ADMIN_PASSWORD) จัดการพนักงาน ดูวันนี้ ดูสรุปรอบ แก้เวลา ส่งออก CSV
 
 Environment:
@@ -40,7 +41,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 
 CUTOFF = 21                 # รอบเงินเดือน: วันที่ 21 ถึงวันที่ 20 ของเดือนถัดไป
-LATE_GRACE_MIN = 5          # ตอกเข้าช้ากว่ากะเกินกี่นาทีถึงนับว่าสาย
+ROUND_MIN = 30              # ปัดชั่วโมงทำงานลงทีละ 30 นาที
+TIERS = (100, 125, 150, 175, 200)
 PIN_MAX_FAILS = 5
 PIN_LOCK_MIN = 15
 EMP_SESSION_DAYS = 180
@@ -50,13 +52,38 @@ TH_DAYS = ["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"]  # ตาม d
 
 # ---------- กติกากะงาน ----------
 def shift_rule(d: date):
-    """อา–พฤ 06:00–16:00 (1 วัน) · ศ 06:00–11:00 (ครึ่งวัน) · ส หยุด"""
+    """อา–พฤ 06:00–16:00 (ปกติ 8 + 125% 2 ชม.) · ศ 06:00–11:00 (ปกติ 3 + 125% 2 ชม.) · ส หยุด (ลงงานไม่ได้)"""
     wd = d.weekday()  # จ=0 ... อา=6
     if wd == 5:
-        return {"in": None, "out": None, "days": 0.0}
+        return {"in": None, "out": None, "base": 0}
     if wd == 4:
-        return {"in": "06:00", "out": "11:00", "days": 0.5}
-    return {"in": "06:00", "out": "16:00", "days": 1.0}
+        return {"in": "06:00", "out": "11:00", "base": 3}
+    return {"in": "06:00", "out": "16:00", "base": 8}
+
+
+def is_holiday(d: date) -> bool:
+    return d.weekday() == 5
+
+
+def tier_hours(d: date, in_at, out_at):
+    """แบ่งชั่วโมงทำงานตามอัตรา: ปกติ (8 หรือ 3) → 125% 2 ชม. → 150% 1 → 175% 1 → 200% ที่เหลือทั้งหมด
+    ชั่วโมงรวมปัดลงทีละ 30 นาที"""
+    out = {t: 0.0 for t in TIERS}
+    if not in_at or not out_at or out_at <= in_at:
+        return out
+    mins = int((out_at - in_at).total_seconds() // 60)
+    rem = (mins - mins % ROUND_MIN) / 60
+    caps = (shift_rule(d)["base"], 2, 1, 1, float("inf"))
+    for t, cap in zip(TIERS, caps):
+        take = min(rem, cap)
+        out[t] = take
+        rem -= take
+    return out
+
+
+def units_of(tiers: dict) -> float:
+    """ชั่วโมงเทียบเท่า (ชั่วโมง × อัตรา) ใช้คูณค่าแรงต่อชั่วโมง"""
+    return sum(h * t / 100 for t, h in tiers.items())
 
 
 def now_local() -> datetime:
@@ -87,14 +114,9 @@ def fmt_t(ts):
     return ts.astimezone(TZ).strftime("%H:%M") if ts else None
 
 
-def late_minutes(d: date, in_at):
-    r = shift_rule(d)
-    if not r["in"] or not in_at:
-        return 0
-    h, mi = map(int, r["in"].split(":"))
-    start = datetime(d.year, d.month, d.day, h, mi, tzinfo=TZ)
-    diff = (in_at.astimezone(TZ) - start).total_seconds() / 60
-    return int(diff) if diff > LATE_GRACE_MIN else 0
+def at(d: date, hhmm: str) -> datetime:
+    h, m = map(int, hhmm.split(":"))
+    return datetime(d.year, d.month, d.day, h, m, tzinfo=TZ)
 
 
 # ---------- รหัสผ่าน / PIN ----------
@@ -154,6 +176,10 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS days_day_idx ON days(day);
+ALTER TABLE days ADD COLUMN IF NOT EXISTS edited_by_emp BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE days ADD COLUMN IF NOT EXISTS leave_hours NUMERIC(5,1) NOT NULL DEFAULT 0;
+ALTER TABLE days DROP CONSTRAINT IF EXISTS days_status_check;
+ALTER TABLE days ADD CONSTRAINT days_status_check CHECK (status IN ('work','absent','leave','holiday'));
 """
 
 
@@ -182,7 +208,7 @@ async def close_db(app):
 
 
 async def get_rate(db) -> float:
-    v = await db.fetchval("SELECT value FROM settings WHERE key='daily_rate'")
+    v = await db.fetchval("SELECT value FROM settings WHERE key='hourly_rate'")
     try:
         return float(v or 0)
     except ValueError:
@@ -325,15 +351,37 @@ def day_view(d: date, rec):
     r = shift_rule(d)
     status = rec["status"] if rec else None
     in_at = rec["in_at"] if rec else None
+    out_at = rec["out_at"] if rec else None
+    tiers = tier_hours(d, in_at, out_at) if status == "work" else {t: 0.0 for t in TIERS}
     return {
         "date": d.isoformat(),
         "dow": TH_DAYS[d.weekday()],
-        "shift_in": r["in"], "shift_out": r["out"],
+        "shift_in": r["in"], "shift_out": r["out"], "holiday": is_holiday(d),
         "status": status,
-        "in": fmt_t(in_at), "out": fmt_t(rec["out_at"] if rec else None),
-        "late_min": late_minutes(d, in_at) if status == "work" else 0,
+        "in": fmt_t(in_at), "out": fmt_t(out_at),
+        "hours": {str(t): h for t, h in tiers.items()},
+        "units": units_of(tiers),
+        "leave_hours": float(rec["leave_hours"]) if rec else 0.0,
+        "note": rec["note"] if rec else None,
         "edited": bool(rec and rec["edited_by_admin"]),
+        "self_edited": bool(rec and rec["edited_by_emp"]),
     }
+
+
+def summarize(views):
+    s = {"worked": 0, "absent": 0, "leave": 0, "holiday": 0, "units": 0.0, "leave_hours": 0.0,
+         "hours": {str(t): 0.0 for t in TIERS}}
+    for v in views:
+        st = v["status"]
+        if st == "work":
+            s["worked"] += 1
+            s["units"] += v["units"]
+            for t in TIERS:
+                s["hours"][str(t)] += v["hours"][str(t)]
+        elif st in ("absent", "leave", "holiday"):
+            s[st] += 1
+        s["leave_hours"] += v["leave_hours"]
+    return s
 
 
 @need("emp")
@@ -352,54 +400,69 @@ async def emp_me(req):
     by = {r["day"]: r for r in rows}
     today_rec = by.get(today) if start <= today <= end else await db.fetchrow(
         "SELECT * FROM days WHERE employee_id=$1 AND day=$2", s["employee_id"], today)
-    days, work, late = 0.0, 0, 0
-    lst = []
-    for d in daterange(start, end):
-        v = day_view(d, by.get(d))
-        if v["status"] == "work":
-            days += shift_rule(d)["days"]
-            work += 1
-            late += 1 if v["late_min"] else 0
-        lst.append(v)
+    lst = [day_view(d, by.get(d)) for d in daterange(start, end)]
+    sm = summarize(lst)
     rate = await get_rate(db)
+    sm["rate"] = rate
+    sm["pay"] = (sm["units"] + sm["leave_hours"]) * rate
     return web.json_response({
         "name": s["name"], "code": s["code"],
         "now": now.strftime("%H:%M:%S"), "today": day_view(today, today_rec),
         "period": {"start": start.isoformat(), "end": end.isoformat(), "offset": offset},
-        "days": lst, "summary": {"paid_days": days, "worked": work, "late": late, "pay": days * rate, "rate": rate},
+        "days": lst, "summary": sm,
     })
 
 
+TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def parse_times(day: date, tin, tout):
+    """คืน (in_at, out_at) หรือยก ValueError พร้อมข้อความ"""
+    for v in (tin, tout):
+        if not v or not TIME_RE.match(str(v)):
+            raise ValueError("ต้องใส่เวลาเข้าและเวลาออก รูปแบบ ชช:นน")
+    in_at, out_at = at(day, str(tin)), at(day, str(tout))
+    if out_at <= in_at:
+        raise ValueError("เวลาออกต้องหลังเวลาเข้า")
+    return in_at, out_at
+
+
 @need("emp")
-async def emp_punch(req):
+async def emp_day(req):
+    """พนักงานลงวันนี้: work (ตามกะ 1 คลิก) / leave / absent / other (ใส่เวลาเอง) — แก้ได้เฉพาะวันนี้"""
     d = await body(req)
-    kind = d.get("kind")
-    if kind not in ("in", "out"):
+    action = d.get("action")
+    if action not in ("work", "leave", "absent", "other"):
         return web.json_response({"error": "คำขอไม่ถูกต้อง"}, status=400)
-    if ip_limited(req, "punch", 20, 60):
+    if ip_limited(req, "emp_day", 20, 60):
         return web.json_response({"error": "กดถี่เกินไป"}, status=429)
     db = req.app["db"]
     eid = req["sess"]["employee_id"]
-    now = now_local()
-    today = now.date()
+    today = now_local().date()
+    if is_holiday(today):
+        return web.json_response({"error": "วันเสาร์เป็นวันหยุด ลงเวลาไม่ได้"}, status=409)
+    r = shift_rule(today)
+    note = str(d.get("note", "")).strip()[:200] or None
+    in_at = out_at = None
+    status = action
+    if action == "work":
+        in_at, out_at = at(today, r["in"]), at(today, r["out"])
+    elif action == "other":
+        status = "work"
+        try:
+            in_at, out_at = parse_times(today, d.get("in"), d.get("out"))
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
     async with db.acquire() as c, c.transaction():
-        rec = await c.fetchrow("SELECT * FROM days WHERE employee_id=$1 AND day=$2 FOR UPDATE", eid, today)
-        if kind == "in":
-            if rec and rec["in_at"]:
-                return web.json_response({"error": f"ตอกเข้าไปแล้วเมื่อ {fmt_t(rec['in_at'])}"}, status=409)
-            if rec and rec["status"] in ("absent", "leave"):
-                return web.json_response({"error": "วันนี้แอดมินบันทึกว่าขาด/ลา ติดต่อแอดมิน"}, status=409)
-            await c.execute(
-                "INSERT INTO days(employee_id, day, status, in_at) VALUES($1,$2,'work',$3) "
-                "ON CONFLICT (employee_id, day) DO UPDATE SET in_at=EXCLUDED.in_at, status='work'",
-                eid, today, now)
-        else:
-            if not rec or not rec["in_at"]:
-                return web.json_response({"error": "ยังไม่ได้ตอกเข้า"}, status=409)
-            if rec["out_at"]:
-                return web.json_response({"error": f"ตอกออกไปแล้วเมื่อ {fmt_t(rec['out_at'])}"}, status=409)
-            await c.execute("UPDATE days SET out_at=$3 WHERE employee_id=$1 AND day=$2", eid, today, now)
-    return web.json_response({"ok": True, "time": now.strftime("%H:%M")})
+        rec = await c.fetchrow("SELECT edited_by_admin FROM days WHERE employee_id=$1 AND day=$2 FOR UPDATE", eid, today)
+        if rec and rec["edited_by_admin"]:
+            return web.json_response({"error": "แอดมินแก้วันนี้แล้ว ติดต่อแอดมินหากต้องการเปลี่ยน"}, status=409)
+        await c.execute(
+            "INSERT INTO days(employee_id, day, status, in_at, out_at, edited_by_emp, note, leave_hours) "
+            "VALUES($1,$2,$3,$4,$5,$6,$7,0) ON CONFLICT (employee_id, day) DO UPDATE SET status=EXCLUDED.status, "
+            "in_at=EXCLUDED.in_at, out_at=EXCLUDED.out_at, edited_by_emp=EXCLUDED.edited_by_emp, note=EXCLUDED.note",
+            eid, today, status, in_at, out_at, action == "other", note)
+    return web.json_response({"ok": True})
 
 
 # ---------- API แอดมิน ----------
@@ -477,16 +540,16 @@ async def admin_today(req):
     db = req.app["db"]
     today = now_local().date()
     rows = await db.fetch(
-        "SELECT e.id, e.code, e.name, d.status, d.in_at, d.out_at FROM employees e "
+        "SELECT e.id, e.code, e.name, d.* FROM employees e "
         "LEFT JOIN days d ON d.employee_id=e.id AND d.day=$1 WHERE e.active ORDER BY e.code", today)
     r = shift_rule(today)
     out = []
     for x in rows:
-        out.append({"id": x["id"], "code": x["code"], "name": x["name"], "status": x["status"],
-                    "in": fmt_t(x["in_at"]), "out": fmt_t(x["out_at"]),
-                    "late_min": late_minutes(today, x["in_at"]) if x["status"] == "work" else 0})
+        v = day_view(today, x if x["status"] else None)
+        v.update({"id": x["id"], "code": x["code"], "name": x["name"]})
+        out.append(v)
     return web.json_response({"date": today.isoformat(), "dow": TH_DAYS[today.weekday()],
-                              "shift_in": r["in"], "shift_out": r["out"], "rows": out})
+                              "shift_in": r["in"], "shift_out": r["out"], "holiday": is_holiday(today), "rows": out})
 
 
 async def _period_report(db, offset):
@@ -503,28 +566,18 @@ async def _period_report(db, offset):
         recs = by.get(e["id"], {})
         if not e["active"] and not recs:
             continue
-        paid = 0.0
-        work = absent = leave = late = missing_out = 0
         joined = e["created_at"].astimezone(TZ).date()
         first = min([joined] + list(recs.keys()))  # ไม่นับขาดก่อนวันที่เพิ่มพนักงาน
-        for d in daterange(max(start, first), min(end, today)):
-            rec = recs.get(d)
-            r = shift_rule(d)
-            if rec and rec["status"] == "work":
-                paid += r["days"]
-                work += 1
-                late += 1 if late_minutes(d, rec["in_at"]) else 0
-                if rec["in_at"] and not rec["out_at"] and d < today:
-                    missing_out += 1
-            elif rec and rec["status"] == "leave":
-                leave += 1
-            elif rec and rec["status"] == "absent":
-                absent += 1
-            elif r["days"] > 0 and d < today:
-                absent += 1  # วันทำงานที่ผ่านไปแล้วไม่มีการตอก = ขาด
-        report.append({"id": e["id"], "code": e["code"], "name": e["name"], "active": e["active"],
-                       "paid_days": paid, "worked": work, "absent": absent, "leave": leave,
-                       "late": late, "missing_out": missing_out, "pay": paid * rate})
+        views = [day_view(d, recs.get(d)) for d in daterange(start, end)]
+        sm = summarize(views)
+        missing = 0
+        for v in views:
+            dd = date.fromisoformat(v["date"])
+            if v["status"] is None and not v["holiday"] and first <= dd < today:
+                missing += 1  # วันทำงานที่ผ่านไปแล้วไม่มีการลง
+        sm.update({"id": e["id"], "code": e["code"], "name": e["name"], "active": e["active"],
+                   "missing": missing, "pay": (sm["units"] + sm["leave_hours"]) * rate})
+        report.append(sm)
     return start, end, rate, report
 
 
@@ -539,6 +592,10 @@ async def admin_report(req):
                               "rate": rate, "rows": report})
 
 
+def _g(x):
+    return f"{x:g}"
+
+
 @need("admin")
 async def admin_report_csv(req):
     try:
@@ -548,13 +605,15 @@ async def admin_report_csv(req):
     start, end, rate, report = await _period_report(req.app["db"], offset)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([f"รอบ {start.isoformat()} ถึง {end.isoformat()}", f"ค่าแรง/วันเต็ม {rate:g}"])
-    w.writerow(["รหัส", "ชื่อ", "วันคิดเงิน", "มาทำงาน", "ขาด", "ลา", "สาย", "ลืมตอกออก", "ยอดเงิน"])
+    w.writerow([f"รอบ {start.isoformat()} ถึง {end.isoformat()}", f"ค่าแรง/ชั่วโมง {rate:g}"])
+    w.writerow(["รหัส", "ชื่อ", "มาทำงาน", "ชม.100%", "ชม.125%", "ชม.150%", "ชม.175%", "ชม.200%",
+                "ชม.ลาที่ได้เงิน", "ชม.เทียบเท่า", "ขาด", "ลา", "วันหยุด", "ไม่ได้ลง", "ยอดเงิน"])
     for r in report:
-        # กันสูตรใน Excel (CSV injection)
-        name = ("'" + r["name"]) if r["name"][:1] in "=+-@" else r["name"]
-        w.writerow([r["code"], name, f"{r['paid_days']:g}", r["worked"], r["absent"], r["leave"],
-                    r["late"], r["missing_out"], f"{r['pay']:.2f}"])
+        name = ("'" + r["name"]) if r["name"][:1] in "=+-@" else r["name"]  # กันสูตรใน Excel
+        h = r["hours"]
+        w.writerow([r["code"], name, r["worked"], _g(h["100"]), _g(h["125"]), _g(h["150"]), _g(h["175"]), _g(h["200"]),
+                    _g(r["leave_hours"]), _g(r["units"] + r["leave_hours"]), r["absent"], r["leave"], r["holiday"],
+                    r["missing"], f"{r['pay']:.2f}"])
     data = "﻿" + buf.getvalue()  # BOM ให้ Excel อ่านภาษาไทยถูก
     return web.Response(body=data.encode("utf-8"), content_type="text/csv", charset="utf-8",
                         headers={"Content-Disposition": f'attachment; filename="timeclock-{start.isoformat()}.csv"'})
@@ -578,48 +637,50 @@ async def admin_employee_days(req):
                               "days": [day_view(d, by.get(d)) for d in daterange(start, end)]})
 
 
-TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-
-
 @need("admin")
 async def admin_set_day(req):
-    """แก้วันของพนักงาน: status = work (พร้อมเวลาเข้า/ออก) / absent / leave / clear"""
+    """แอดมินแก้วัน: work (ตามกะอัตโนมัติ) / edit (ใส่เวลาเอง) / absent / leave (+ชม.ลาที่ได้เงิน) / holiday / clear"""
     d = await body(req)
     try:
         eid = int(d.get("id"))
         day = date.fromisoformat(str(d.get("date")))
     except (TypeError, ValueError):
         return web.json_response({"error": "คำขอไม่ถูกต้อง"}, status=400)
-    status = d.get("status")
+    action = d.get("status")
     db = req.app["db"]
-    if status == "clear":
+    if action == "clear":
         await db.execute("DELETE FROM days WHERE employee_id=$1 AND day=$2", eid, day)
         return web.json_response({"ok": True})
-    if status not in ("work", "absent", "leave"):
+    if action not in ("work", "edit", "absent", "leave", "holiday"):
         return web.json_response({"error": "สถานะไม่ถูกต้อง"}, status=400)
-
-    def ts(v):
-        if not v:
-            return None
-        if not TIME_RE.match(str(v)):
-            raise ValueError
-        h, m = map(int, str(v).split(":"))
-        return datetime(day.year, day.month, day.day, h, m, tzinfo=TZ)
-
-    try:
-        in_at, out_at = (ts(d.get("in")), ts(d.get("out"))) if status == "work" else (None, None)
-    except ValueError:
-        return web.json_response({"error": "เวลาต้องเป็นรูปแบบ ชช:นน"}, status=400)
-    if status == "work" and not in_at:
-        return web.json_response({"error": "วันทำงานต้องมีเวลาเข้า"}, status=400)
-    if in_at and out_at and out_at <= in_at:
-        return web.json_response({"error": "เวลาออกต้องหลังเวลาเข้า"}, status=400)
+    if action in ("work", "edit") and is_holiday(day):
+        return web.json_response({"error": "วันเสาร์เป็นวันหยุด ลงทำงานไม่ได้"}, status=400)
     note = str(d.get("note", "")).strip()[:200] or None
+    in_at = out_at = None
+    leave_hours = 0.0
+    status = action
+    if action == "work":
+        r = shift_rule(day)
+        in_at, out_at = at(day, r["in"]), at(day, r["out"])
+    elif action == "edit":
+        status = "work"
+        try:
+            in_at, out_at = parse_times(day, d.get("in"), d.get("out"))
+        except ValueError as e:
+            return web.json_response({"error": str(e)}, status=400)
+    elif action == "leave":
+        try:
+            leave_hours = float(d.get("leave_hours") or 0)
+            if not 0 <= leave_hours <= 24 or (leave_hours * 2) % 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            return web.json_response({"error": "ชั่วโมงลาต้องเป็น 0–24 ทีละครึ่งชั่วโมง"}, status=400)
     await db.execute(
-        "INSERT INTO days(employee_id, day, status, in_at, out_at, edited_by_admin, note) VALUES($1,$2,$3,$4,$5,TRUE,$6) "
-        "ON CONFLICT (employee_id, day) DO UPDATE SET status=EXCLUDED.status, in_at=EXCLUDED.in_at, "
-        "out_at=EXCLUDED.out_at, edited_by_admin=TRUE, note=EXCLUDED.note",
-        eid, day, status, in_at, out_at, note)
+        "INSERT INTO days(employee_id, day, status, in_at, out_at, edited_by_admin, edited_by_emp, note, leave_hours) "
+        "VALUES($1,$2,$3,$4,$5,TRUE,FALSE,$6,$7) ON CONFLICT (employee_id, day) DO UPDATE SET status=EXCLUDED.status, "
+        "in_at=EXCLUDED.in_at, out_at=EXCLUDED.out_at, edited_by_admin=TRUE, edited_by_emp=FALSE, "
+        "note=EXCLUDED.note, leave_hours=EXCLUDED.leave_hours",
+        eid, day, status, in_at, out_at, note, leave_hours)
     return web.json_response({"ok": True})
 
 
@@ -628,12 +689,12 @@ async def admin_set_rate(req):
     d = await body(req)
     try:
         rate = float(d.get("rate"))
-        if not 0 <= rate <= 100000:
+        if not 0 <= rate <= 10000:
             raise ValueError
     except (TypeError, ValueError):
         return web.json_response({"error": "ค่าแรงไม่ถูกต้อง"}, status=400)
     await req.app["db"].execute(
-        "INSERT INTO settings(key, value) VALUES('daily_rate',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+        "INSERT INTO settings(key, value) VALUES('hourly_rate',$1) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
         f"{rate:g}")
     return web.json_response({"ok": True})
 
@@ -666,7 +727,7 @@ def make_app():
     r.add_post("/api/login", emp_login)
     r.add_post("/api/logout", logout)
     r.add_get("/api/me", emp_me)
-    r.add_post("/api/punch", emp_punch)
+    r.add_post("/api/day", emp_day)
     r.add_post("/api/admin/login", admin_login)
     r.add_get("/api/admin/me", admin_me)
     r.add_get("/api/admin/employees", admin_employees)

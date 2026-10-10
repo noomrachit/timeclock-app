@@ -35,11 +35,9 @@
     </div>
     <div class="card">
       <div class="clock" id="now">--:--:--</div>
-      <div class="sub">เวลาตามเซิร์ฟเวอร์</div>
-      <div id="todayText"></div>
-      <button class="block in" id="btnIn">ตอกเข้า</button>
-      <button class="block out" id="btnOut">ตอกออก</button>
-      <div class="msg" id="punchMsg"></div>
+      <div id="todayText" style="margin-top:6px"></div>
+      <button class="block in" id="openPick">ลงเวลาวันนี้</button>
+      <div class="msg" id="dayMsg"></div>
     </div>
     <div class="card">
       <div class="nav">
@@ -52,6 +50,27 @@
     </div>
     <div class="card" id="list"></div>
   </section>
+
+  <dialog id="pick">
+    <h2 id="pickTitle">วันนี้ลงเวลาแบบไหน</h2>
+    <div class="sub" id="pickSub"></div>
+    <div id="pickBtns">
+      <button class="block in" data-act="work">ทำงาน</button>
+      <button class="block" data-act="leave">ลา</button>
+      <button class="block danger" data-act="absent">ขาด</button>
+      <button class="block out" data-act="other">อื่นๆ (ใส่เวลาเอง)</button>
+    </div>
+    <div id="otherBox" class="hidden">
+      <div class="flex">
+        <div><label for="oIn">เข้า</label><input id="oIn" type="time"></div>
+        <div><label for="oOut">ออก</label><input id="oOut" type="time"></div>
+      </div>
+    </div>
+    <div id="noteBox" class="hidden"><label for="pNote">หมายเหตุ</label><input id="pNote" maxlength="200"></div>
+    <div id="confirmBox" class="hidden"><button class="block in" id="pSave">บันทึก</button></div>
+    <button class="block" id="pClose">ปิด</button>
+    <div class="msg" id="pMsg"></div>
+  </dialog>
 
 </div>
 <script src="/static/common.js"></script>

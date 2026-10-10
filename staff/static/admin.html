@@ -27,7 +27,7 @@
       <h1>แอดมิน · ลงเวลาพนักงาน</h1>
       <button class="small" id="logoutBtn">ออกจากระบบ</button>
     </div>
-    <div class="tabs">
+    <div class="tabs" id="mainTabs">
       <button data-tab="today" class="on">วันนี้</button>
       <button data-tab="report">สรุปรอบ</button>
       <button data-tab="emps">พนักงาน</button>
@@ -37,7 +37,7 @@
       <h2 id="todayTitle"></h2>
       <div class="stat" id="todayStat"></div>
       <input id="todayFilter" placeholder="ค้นหาชื่อหรือรหัส">
-      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>เข้า</th><th>ออก</th><th>สถานะ</th></tr></thead><tbody id="todayBody"></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>เวลา</th><th>ชั่วโมง</th><th>หมายเหตุ</th></tr></thead><tbody id="todayBody"></tbody></table></div>
     </div>
 
     <div class="card hidden" id="tab-report">
@@ -47,13 +47,13 @@
         <button id="nextBtn" aria-label="รอบถัดไป">›</button>
       </div>
       <div class="flex">
-        <div><label for="rate">ค่าแรงต่อวันเต็ม (บาท) ใช้กับทุกคน</label><input id="rate" type="number" min="0" step="1"></div>
+        <div><label for="rate">ค่าแรงต่อชั่วโมง (บาท) ใช้กับทุกคน</label><input id="rate" type="number" min="0" step="1"></div>
         <div style="flex:0"><button id="rateBtn">บันทึกค่าแรง</button></div>
         <div style="flex:0"><button id="csvBtn">ส่งออกไฟล์ตาราง</button></div>
       </div>
       <div class="msg" id="reportMsg"></div>
       <div class="stat" id="reportStat"></div>
-      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>วันคิดเงิน</th><th>มา</th><th>ขาด</th><th>ลา</th><th>สาย</th><th>ลืมตอกออก</th><th>ยอดเงิน</th><th></th></tr></thead><tbody id="reportBody"></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>มา</th><th>100%</th><th>125%</th><th>150%</th><th>175%</th><th>200%</th><th>ลาได้เงิน</th><th>ขาด</th><th>ลา</th><th>ไม่ได้ลง</th><th>ยอดเงิน</th><th></th></tr></thead><tbody id="reportBody"></tbody></table></div>
     </div>
 
     <div class="card hidden" id="tab-emps">
@@ -77,12 +77,20 @@
     <div id="dlgList"></div>
     <div class="card" id="editBox" style="margin-top:10px">
       <h2 id="editTitle"></h2>
-      <div class="flex">
-        <div><label for="edStatus">สถานะ</label>
-          <select id="edStatus"><option value="work">ทำงาน</option><option value="absent">ขาด</option><option value="leave">ลา</option><option value="clear">ล้าง (ไม่มีข้อมูล)</option></select></div>
+      <div class="tabs" id="edActs">
+        <button data-a="work">ทำงาน (ตามกะ)</button>
+        <button data-a="edit">แก้เวลา</button>
+        <button data-a="absent">ขาด</button>
+        <button data-a="leave">ลา</button>
+        <button data-a="holiday">วันหยุด</button>
+        <button data-a="clear" class="danger">ล้าง</button>
+      </div>
+      <div class="sub" id="edHint"></div>
+      <div class="flex" id="edTimes">
         <div><label for="edIn">เข้า</label><input id="edIn" type="time"></div>
         <div><label for="edOut">ออก</label><input id="edOut" type="time"></div>
       </div>
+      <div id="edLeave"><label for="edLeaveH">ชั่วโมงลาที่ได้เงิน (คิด 100%, 0 = ไม่ได้เงิน)</label><input id="edLeaveH" type="number" min="0" max="24" step="0.5" value="0"></div>
       <label for="edNote">หมายเหตุ</label><input id="edNote" maxlength="200">
       <button class="block in" id="edSave">บันทึก</button>
       <div class="msg" id="edMsg"></div>

@@ -11,7 +11,7 @@ function show(view) {
 
 function setTab(t) {
   tab = t;
-  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('#mainTabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
   ['today', 'report', 'emps'].forEach((x) => $('tab-' + x).classList.toggle('hidden', x !== t));
   refresh();
 }
@@ -34,12 +34,10 @@ async function loadToday() {
   show('main');
   const d = r.data;
   todayRows = d.rows;
-  $('todayTitle').textContent = `${d.dow} ${dmy(d.date)} · กะ ${d.shift_in || 'หยุด'}${d.shift_out ? '–' + d.shift_out : ''}`;
-  const inNow = d.rows.filter((x) => x.in && !x.out).length;
-  const done = d.rows.filter((x) => x.out).length;
-  const late = d.rows.filter((x) => x.late_min).length;
+  $('todayTitle').textContent = `${d.dow} ${dmy(d.date)} · ` + (d.holiday ? 'วันหยุด' : `กะ ${d.shift_in}–${d.shift_out}`);
+  const c = (st) => d.rows.filter((x) => x.status === st).length;
   const none = d.rows.filter((x) => !x.status).length;
-  $('todayStat').innerHTML = `<div><b>${d.rows.length}</b>พนักงาน</div><div><b>${inNow}</b>กำลังทำงาน</div><div><b>${done}</b>ตอกออกแล้ว</div><div><b>${late}</b>สาย</div><div><b>${none}</b>ยังไม่ตอก</div>`;
+  $('todayStat').innerHTML = `<div><b>${d.rows.length}</b>พนักงาน</div><div><b>${c('work')}</b>ทำงาน</div><div><b>${c('leave')}</b>ลา</div><div><b>${c('absent')}</b>ขาด</div><div><b>${none}</b>ยังไม่ลง</div>`;
   renderToday();
 }
 
@@ -48,8 +46,8 @@ function match(x, q) { q = q.trim().toLowerCase(); return !q || x.code.toLowerCa
 function renderToday() {
   const q = $('todayFilter').value;
   $('todayBody').innerHTML = todayRows.filter((x) => match(x, q)).map((x) =>
-    `<tr><td>${esc(x.code)}</td><td><a href="#" data-emp="${x.id}" data-name="${esc(x.name)}">${esc(x.name)}</a></td><td>${esc(x.in || '-')}</td><td>${esc(x.out || '-')}</td><td>${statusBadge({ ...x, shift_in: true })}</td></tr>`
-  ).join('') || '<tr><td colspan="5" class="sub">ไม่มีข้อมูล</td></tr>';
+    `<tr><td>${esc(x.code)}</td><td><a href="#" data-emp="${x.id}" data-name="${esc(x.name)}">${esc(x.name)}</a></td><td>${x.status ? statusBadge(x) : '<span class="badge b-off">ยังไม่ลง</span>'}${flags(x)}</td><td>${x.status === 'work' ? `${esc(x.in)}–${esc(x.out)}` : ''}</td><td>${esc(hoursText(x))}</td><td>${esc(x.note || '')}</td></tr>`
+  ).join('') || '<tr><td colspan="6" class="sub">ไม่มีข้อมูล</td></tr>';
 }
 
 // ---------- สรุปรอบ ----------
@@ -62,11 +60,12 @@ async function loadReport() {
   $('nextBtn').disabled = offset >= 0;
   if (document.activeElement !== $('rate')) $('rate').value = d.rate || '';
   const total = d.rows.reduce((a, x) => a + x.pay, 0);
-  const miss = d.rows.reduce((a, x) => a + x.missing_out, 0);
-  $('reportStat').innerHTML = `<div><b>${d.rows.length}</b>คน</div><div><b>${baht(total)}</b>ยอดรวม</div><div><b>${miss}</b>ลืมตอกออก</div>`;
-  $('reportBody').innerHTML = d.rows.map((x) =>
-    `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}${x.active ? '' : ' <span class="badge b-off">ปิด</span>'}</td><td>${x.paid_days}</td><td>${x.worked}</td><td>${x.absent}</td><td>${x.leave}</td><td>${x.late}</td><td>${x.missing_out ? `<span class="badge b-warn">${x.missing_out}</span>` : 0}</td><td>${baht(x.pay)}</td><td><button class="small" data-emp="${x.id}" data-name="${esc(x.name)}">ดู/แก้</button></td></tr>`
-  ).join('') || '<tr><td colspan="10" class="sub">ยังไม่มีพนักงาน</td></tr>';
+  const miss = d.rows.reduce((a, x) => a + x.missing, 0);
+  $('reportStat').innerHTML = `<div><b>${d.rows.length}</b>คน</div><div><b>${baht(total)}</b>ยอดรวม</div><div><b>${miss}</b>วันที่ไม่ได้ลง</div>`;
+  $('reportBody').innerHTML = d.rows.map((x) => {
+    const h = x.hours;
+    return `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}${x.active ? '' : ' <span class="badge b-off">ปิด</span>'}</td><td>${x.worked}</td><td>${h['100']}</td><td>${h['125']}</td><td>${h['150']}</td><td>${h['175']}</td><td>${h['200']}</td><td>${x.leave_hours}</td><td>${x.absent}</td><td>${x.leave}</td><td>${x.missing ? `<span class="badge b-warn">${x.missing}</span>` : 0}</td><td>${baht(x.pay)}</td><td><button class="small" data-emp="${x.id}" data-name="${esc(x.name)}">ดู/แก้</button></td></tr>`;
+  }).join('') || '<tr><td colspan="14" class="sub">ยังไม่มีพนักงาน</td></tr>';
 }
 
 // ---------- พนักงาน ----------
@@ -96,6 +95,9 @@ function showPin(name, code, pin) {
 }
 
 // ---------- กล่องแก้วัน ----------
+let edAct = 'work';
+let edDay = null;
+
 async function openDays(id, name) {
   dlg = { id, name, date: null };
   $('dlgTitle').textContent = name;
@@ -103,31 +105,43 @@ async function openDays(id, name) {
   if (!$('dayDlg').open) $('dayDlg').showModal();
   const r = await api(`/api/admin/days?id=${id}&offset=${offset}`);
   if (!(await guard(r)) || !r.ok) return;
-  $('dlgList').innerHTML = r.data.days.map((v) =>
-    `<div class="row"><span>${esc(v.dow)} ${dm(v.date)}</span><span>${v.status === 'work' ? `${esc(v.in || '-')} → ${esc(v.out || '-')}` : ''}${v.edited ? ' <span class="badge b-off">แก้โดยแอดมิน</span>' : ''}</span>${statusBadge(v)}<button class="small" data-day="${v.date}" data-st="${v.status || ''}" data-in="${v.in || ''}" data-out="${v.out || ''}">แก้</button></div>`
+  window._days = r.data.days;
+  $('dlgList').innerHTML = r.data.days.map((v, i) =>
+    `<div class="row"><span>${esc(v.dow)} ${dm(v.date)}</span><span>${v.status === 'work' ? `${esc(v.in)}–${esc(v.out)} · ${esc(hoursText(v))}` : esc(hoursText(v) || v.note || '')}${flags(v)}</span>${statusBadge(v)}<button class="small" data-i="${i}">แก้</button></div>`
   ).join('');
 }
 
-function syncEdit() {
-  const w = $('edStatus').value === 'work';
-  $('edIn').disabled = $('edOut').disabled = !w;
+function setEdAct(a) {
+  edAct = a;
+  document.querySelectorAll('#edActs button').forEach((b) => b.classList.toggle('on', b.dataset.a === a));
+  const sat = edDay && edDay.holiday;
+  $('edTimes').classList.toggle('hidden', a !== 'edit');
+  $('edLeave').classList.toggle('hidden', a !== 'leave');
+  $('edHint').textContent =
+    a === 'work' ? (sat ? 'วันเสาร์ลงทำงานไม่ได้' : `ลงเวลาตามกะอัตโนมัติ ${edDay.shift_in}–${edDay.shift_out}`) :
+    a === 'edit' ? (sat ? 'วันเสาร์ลงทำงานไม่ได้' : 'ใส่เวลาเข้า–ออกเอง (คิดชั่วโมงปัดลงทีละ 30 นาที)') :
+    a === 'clear' ? 'ลบข้อมูลวันนี้ทั้งหมด' : 'ใส่หมายเหตุได้';
 }
 
 $('dlgList').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-day]');
+  const b = e.target.closest('button[data-i]');
   if (!b) return;
-  dlg.date = b.dataset.day;
-  $('editTitle').textContent = 'แก้วันที่ ' + dmy(dlg.date);
-  $('edStatus').value = b.dataset.st || 'work';
-  $('edIn').value = b.dataset.in; $('edOut').value = b.dataset.out; $('edNote').value = '';
+  const v = edDay = window._days[+b.dataset.i];
+  dlg.date = v.date;
+  $('editTitle').textContent = `แก้วันที่ ${v.dow} ${dmy(v.date)}`;
+  $('edIn').value = v.in || v.shift_in || '';
+  $('edOut').value = v.out || v.shift_out || '';
+  $('edLeaveH').value = v.leave_hours || 0;
+  $('edNote').value = v.note || '';
   msg($('edMsg'), '');
-  syncEdit();
+  setEdAct(v.status === 'work' ? (v.in === v.shift_in && v.out === v.shift_out ? 'work' : 'edit') : (v.status || (v.holiday ? 'holiday' : 'work')));
   $('editBox').classList.remove('hidden');
   $('editBox').scrollIntoView({ behavior: 'smooth' });
 });
-$('edStatus').addEventListener('change', syncEdit);
+$('edActs').addEventListener('click', (e) => { const b = e.target.closest('button[data-a]'); if (b) setEdAct(b.dataset.a); });
 $('edSave').addEventListener('click', async () => {
-  const r = await api('/api/admin/day', { id: dlg.id, date: dlg.date, status: $('edStatus').value, in: $('edIn').value, out: $('edOut').value, note: $('edNote').value });
+  if (edAct === 'clear' && !confirm('ลบข้อมูลวันนี้ของพนักงานคนนี้?')) return;
+  const r = await api('/api/admin/day', { id: dlg.id, date: dlg.date, status: edAct, in: $('edIn').value, out: $('edOut').value, leave_hours: $('edLeaveH').value, note: $('edNote').value });
   if (!r.ok) { msg($('edMsg'), r.data.error || 'บันทึกไม่สำเร็จ'); return; }
   await openDays(dlg.id, dlg.name);
   refresh();
@@ -135,7 +149,7 @@ $('edSave').addEventListener('click', async () => {
 $('dlgClose').addEventListener('click', () => $('dayDlg').close());
 
 // ---------- ปุ่มต่าง ๆ ----------
-document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+document.querySelectorAll('#mainTabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 document.addEventListener('click', (e) => {
   const a = e.target.closest('[data-emp]');
   if (a) { e.preventDefault(); openDays(+a.dataset.emp, a.dataset.name); }

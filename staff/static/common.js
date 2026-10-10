@@ -24,14 +24,26 @@ function dm(iso) { const [, m, d] = iso.split('-'); return `${+d}/${+m}`; }
 function baht(n) { return '฿' + Number(n || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
 
 function statusBadge(v) {
-  if (v.status === 'work') {
-    if (v.in && !v.out) return '<span class="badge b-in">กำลังทำงาน</span>';
-    return v.late_min ? `<span class="badge b-warn">สาย ${v.late_min} น.</span>` : '<span class="badge b-ok">ทำ</span>';
-  }
+  if (v.status === 'work') return '<span class="badge b-ok">ทำงาน</span>';
   if (v.status === 'absent') return '<span class="badge b-no">ขาด</span>';
-  if (v.status === 'leave') return '<span class="badge b-off">ลา</span>';
-  if (!v.shift_in) return '<span class="badge b-off">หยุด</span>';
+  if (v.status === 'leave') return '<span class="badge b-warn">ลา</span>';
+  if (v.status === 'holiday' || v.holiday) return '<span class="badge b-off">วันหยุด</span>';
   return '<span class="badge b-off">-</span>';
+}
+
+// ชั่วโมงตามอัตรา เช่น "8 + 2×125%"
+function hoursText(v) {
+  if (v.status !== 'work') return v.status === 'leave' && v.leave_hours ? `ลาได้เงิน ${v.leave_hours} ชม.` : '';
+  const h = v.hours || {};
+  const parts = [];
+  if (h['100']) parts.push(`${h['100']}`);
+  ['125', '150', '175', '200'].forEach((t) => { if (h[t]) parts.push(`${h[t]}×${t}%`); });
+  return parts.join(' + ') || '0';
+}
+
+function flags(v) {
+  return (v.edited ? ' <span class="badge b-off">แก้โดยแอดมิน</span>' : '') +
+    (v.self_edited ? ' <span class="badge b-in">แก้เอง</span>' : '');
 }
 
 function msg(el, text, ok) { el.textContent = text || ''; el.className = 'msg ' + (ok ? 'ok' : 'err'); }
